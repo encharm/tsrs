@@ -234,11 +234,18 @@ function stageWasm(module, out, versions, license, notice) {
 }
 
 function pnpmPack(dir, out) {
-    const stdout = execFileSync("pnpm", ["pack", "--json", "--pack-destination", out], {
-        cwd: dir,
-        encoding: "utf8",
-        shell: process.platform === "win32",
-    });
+    let stdout;
+    try {
+        stdout = execFileSync("pnpm", ["pack", "--json", "--pack-destination", out], {
+            cwd: dir,
+            encoding: "utf8",
+            shell: process.platform === "win32",
+        });
+    } catch (error) {
+        // With --json, pnpm reports its error on stdout
+        if (error.stdout) process.stderr.write(error.stdout);
+        throw error;
+    }
     const info = JSON.parse(stdout);
     return path.resolve(out, info.filename);
 }

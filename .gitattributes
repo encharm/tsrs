@@ -1,0 +1,3 @@
+# A script with a CRLF shebang line does not run on Unix, and pnpm refuses to pack one: keep the npm launcher LF
+# whatever the checkout (Windows runners convert line endings).
+npm/tsrs/bin/tsrs text eol=lf

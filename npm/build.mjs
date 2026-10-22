@@ -167,7 +167,8 @@ function buildSdk(tscPath) {
     }
     fs.rmSync(path.join(pkgDir, "dist"), { recursive: true, force: true });
     fs.rmSync(path.join(pkgDir, "tsconfig.tsbuildinfo"), { force: true });
-    const isJs = /\.[cm]?js$/.test(tsc);
+    // typescript/bin/tsc (the default) is a Node script without an extension: Windows cannot run it directly
+    const isJs = tscPath === undefined || /\.[cm]?js$/.test(tsc);
     execFileSync(isJs ? process.execPath : tsc, [...(isJs ? [tsc] : []), "-b", path.join(pkgDir, "tsconfig.json")], { stdio: "inherit" });
 
     // Like upstream: published declarations may only import relative paths or the package's own `#` imports.

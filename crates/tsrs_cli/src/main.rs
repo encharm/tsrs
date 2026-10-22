@@ -75,7 +75,7 @@ fn mimalloc_collect(force: bool) {
     let _ = force;
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     #[cfg(all(target_os = "linux", not(any(feature = "system-alloc", miri))))]
     tsrs_core::allocator::init_mimalloc();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -121,5 +121,9 @@ fn main() {
     tsrs_core::memsplit::report("exit");
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
-    std::process::exit(status as i32)
+    // Returned, not passed to std::process::exit: on Windows that is ExitProcess, which skips the C runtime's exit
+    // handlers, among them the one that writes a profile-guided optimization profile, so the Windows release's CLI
+    // training run wrote none ("no nonempty cli profile"). Returning from main exits through the C runtime on every
+    // platform; on Unix std::process::exit already did (libc exit).
+    std::process::ExitCode::from(status as u8)
 }

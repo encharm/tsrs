@@ -1,0 +1,24 @@
+# Temporary: reproduces the Windows release's packing step with a placeholder binary.
+name: Debug pack (Windows)
+on:
+  push:
+    branches: [debug-pack-windows]
+permissions: {}
+jobs:
+  pack:
+    runs-on: windows-latest
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+      - uses: oxc-project/setup-node@f46a72f95efdc55273fcd042d61c84e723b2892c # v1.4.1
+        with:
+          registry-url: ""
+      - name: Pack with a placeholder binary
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "out/x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Set-Content -Path (Join-Path $out "tsrs.exe") -Value "placeholder"
+          pnpm --version
+          node npm/build.mjs --artifacts out --pack
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd npm/dist/tsrs
+          pnpm pack --pack-destination ..

@@ -623,7 +623,7 @@ fn tsc_build_compilation(
         sys.write("Usage: tsrs -b [projects...] [options]\n  See `tsc -b --help` for options.\n");
         return CommandLineResult { watcher: None, status: ExitStatus::Success };
     }
-    // tsrs-only: no file watching backend on this platform (Windows; Go has ReadDirectoryChangesW).
+    // tsrs-only: no file watching backend on this platform (none of tsrs_fswatch's backends runs here).
     if build_command.compiler_options.watch.is_true()
         && testing.is_none()
         && !tsrs_fswatch::default().available()

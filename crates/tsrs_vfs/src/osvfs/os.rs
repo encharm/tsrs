@@ -156,7 +156,7 @@ fn native_realpath(path: &str) -> io::Result<String> {
 fn native_realpath(path: &str) -> io::Result<String> {
     let p = fs::canonicalize(path)?.to_string_lossy().into_owned();
     if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
-        return Ok(format!(r"\\{}", rest));
+        return Ok(format!(r"\\{rest}"));
     }
     if let Some(rest) = p.strip_prefix(r"\\?\") {
         return Ok(rest.to_string());

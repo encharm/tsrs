@@ -134,7 +134,7 @@ pub static ErrFilesystemUnsupported: Sentinel =
     Sentinel("fswatch: watcher backend unsupported on this filesystem");
 
 // `fmt.Errorf("%w: watched directory removed", ErrWatchTerminated)`.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn err_watched_directory_removed() -> Error {
     Error::wrap(
         format!("{}: watched directory removed", ErrWatchTerminated.0),
@@ -294,8 +294,12 @@ pub(crate) static kqueueWatcher: LazyLock<watcher> = LazyLock::new(|| {
     let w = crate::kqueue::init(w);
     w
 });
-// windows.go (ReadDirectoryChangesW) is not ported: Windows builds get an unavailable watcher.
-pub(crate) static windowsWatcher: LazyLock<watcher> = LazyLock::new(|| watcher::new("windows"));
+pub(crate) static windowsWatcher: LazyLock<watcher> = LazyLock::new(|| {
+    let w = watcher::new("windows");
+    #[cfg(windows)]
+    let w = crate::windows::init(w);
+    w
+});
 // fanotify_linux.go is not ported: fanotify().Available() is false, so Linux uses inotify (Go's Default() falls
 // back to inotify the same way on kernels without fanotify).
 pub(crate) static fanotifyWatcher: LazyLock<watcher> = LazyLock::new(|| watcher::new("fanotify"));
@@ -1050,9 +1054,9 @@ pub(crate) fn watch_remove(impl_: &Arc<dyn watcherImpl>, w: &Arc<dirWatch>) {
 }
 
 // watcher.go:775
-#[expect(
-    dead_code,
-    reason = "its only Go caller, windows.go (windowsSubscription.fatal), is not ported"
+#[cfg_attr(
+    not(windows),
+    expect(dead_code, reason = "its only Go caller is windows.go (windowsSubscription.fatal)")
 )]
 pub(crate) fn handle_watcher_error(impl_: &Arc<dyn watcherImpl>, werr: &dirWatchError) {
     watch_remove(impl_, &werr.dir_watch);
@@ -1080,7 +1084,7 @@ pub(crate) struct callback {
     terminal: Option<Error>,
     delivered: bool,
     comparer: pathComparer,
-    #[cfg(target_os = "macos")] // read only by terminate_callbacks_for_deleted_root
+    #[cfg(any(target_os = "macos", windows))] // read only by terminate_callbacks_for_deleted_root
     dir_comparison: comparisonPath<'static>,
     physical_comparison: comparisonPath<'static>,
     file_comparison: comparisonPath<'static>,
@@ -1089,9 +1093,12 @@ pub(crate) struct callback {
 // dirWatchError associates an error with a specific directory watch.
 pub(crate) struct dirWatchError {
     pub(crate) err: Error,
-    #[expect(
-        dead_code,
-        reason = "read only by handle_watcher_error, whose Go caller (windows.go) is not ported"
+    #[cfg_attr(
+        not(windows),
+        expect(
+            dead_code,
+            reason = "read only by handle_watcher_error, whose Go caller is windows.go"
+        )
     )]
     pub(crate) dir_watch: Arc<dirWatch>,
 }
@@ -1119,7 +1126,7 @@ pub(crate) struct dirWatch {
     pub(crate) physical_dir_fold: String,
 
     // state stores per-directory platform-specific bookkeeping (fsevents, windows).
-    #[cfg(target_os = "macos")] // windows.go is not ported
+    #[cfg(any(target_os = "macos", windows))]
     pub(crate) state: Mutex<Option<Arc<dyn std::any::Any + Send + Sync>>>,
     // sequence returns a backend event sequence cutoff for new logical callbacks.
     sequence: Option<fn() -> u64>,
@@ -1164,7 +1171,7 @@ impl dirWatch {
             dir_fold,
             #[cfg(target_os = "macos")]
             physical_dir_fold,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             state: Mutex::new(None),
             sequence,
             mu: Mutex::new(dirWatchState {
@@ -1229,7 +1236,7 @@ impl dirWatch {
     }
 
     // watcher.go:926
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub(crate) fn notify(&self) {
         let st = self.mu.lock().unwrap();
         let has_pending_cbs = st.callbacks.iter().any(|cb| !cb.delivered);
@@ -1363,7 +1370,7 @@ impl dirWatch {
     }
 
     // watcher.go:1066
-    #[cfg(target_os = "macos")] // only the FSEvents backend calls it
+    #[cfg(any(target_os = "macos", windows))] // the FSEvents and Windows backends call it
     pub(crate) fn terminate_callbacks_for_deleted_root(
         &self,
         path: &str,
@@ -1446,7 +1453,7 @@ impl dirWatch {
             terminal: None,
             delivered: false,
             comparer: self.comparer,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             dir_comparison: self.comparer.prepare(dir),
             physical_comparison: self.comparer.prepare(physical_dir),
             file_comparison: self.comparer.prepare(file),

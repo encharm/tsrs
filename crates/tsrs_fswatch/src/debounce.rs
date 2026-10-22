@@ -90,7 +90,7 @@ impl debounce {
 
     // debounce.go:65
     // trigger wakes the debounce loop.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub(crate) fn trigger(&self) {
         let mut l = self.latch_mu.lock().unwrap();
         if !l.notified {

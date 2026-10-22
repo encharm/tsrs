@@ -368,7 +368,10 @@ jobs:
           $profiles = @(Get-ChildItem $raw -Filter "*.profraw" | Where-Object Length -gt 0 | ForEach-Object FullName)
           if ($profiles.Count -eq 0) { throw "no nonempty profiles" }
           $merged = Join-Path $env:RUNNER_TEMP "pgo/merged.profdata"
-          & $profdata merge -o $merged @profiles
+          # one profile per test-runner worker: too many paths for a command line, so they go in a list file
+          $list = Join-Path $env:RUNNER_TEMP "pgo/profiles.txt"
+          Set-Content -Path $list -Value $profiles
+          & $profdata merge -o $merged --input-files $list
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $profdata show $merged | Select-Object -Last 5
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -402,6 +405,8 @@ jobs:
           Set-Content -Path (Join-Path $env:RUNNER_TEMP "bad.ts") -Value 'const x: number = "no";'
           & $exe --noEmit --ignoreConfig (Join-Path $env:RUNNER_TEMP "bad.ts")
           if ($LASTEXITCODE -ne 2) { throw "expected exit 2 for a type error, got $LASTEXITCODE" }
+          # the step exits with $LASTEXITCODE, still the type-error run's 2: the checks above passed
+          exit 0
 
       - name: Installed-package smoke (CLI)
         shell: pwsh

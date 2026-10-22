@@ -777,7 +777,7 @@ impl Watcher for watcher {
                 return Err(errNilCallback.into());
             };
             let dir = filepath_clean(&request.dir);
-            if !dir.starts_with('/') {
+            if !filepath_is_abs(&dir) {
                 rollback(&prepared);
                 return Err(errNotAbsolute.into());
             }
@@ -855,7 +855,7 @@ impl Watcher for watcher {
             return Err(ErrUnavailable.into());
         }
         let path = filepath_clean(path);
-        if !path.starts_with('/') {
+        if !filepath_is_abs(&path) {
             return Err(errNotAbsolute.into());
         }
         let path = canonicalize_path(&path);
@@ -1620,7 +1620,7 @@ pub(crate) fn physical_dir_for(dir: &str) -> String {
     let Ok(realpath) = std::fs::canonicalize(dir) else {
         return dir.to_string();
     };
-    let realpath = realpath.to_string_lossy().into_owned();
+    let realpath = strip_verbatim(realpath.to_string_lossy().into_owned());
     if realpath == dir {
         return dir.to_string();
     }
@@ -1642,10 +1642,10 @@ pub(crate) fn rebase_path(path: &str, from: &str, to: &str) -> String {
         return path.to_string();
     }
     let suffix = &path[from.len()..];
-    if from.ends_with('/') {
+    if ends_with_separator(from) {
         return join_path_suffix(to, suffix);
     }
-    if !suffix.starts_with('/') {
+    if !starts_with_separator(suffix) {
         return path.to_string();
     }
     join_path_suffix(to, suffix)
@@ -1656,16 +1656,16 @@ pub(crate) fn join_path_suffix(root: &str, suffix: &str) -> String {
     if suffix.is_empty() {
         return root.to_string();
     }
-    if let Some(rest) = suffix.strip_prefix('/') {
-        if root.ends_with('/') {
-            return format!("{root}{rest}");
+    if starts_with_separator(suffix) {
+        if ends_with_separator(root) {
+            return format!("{root}{}", &suffix[1..]);
         }
         return format!("{root}{suffix}");
     }
-    if root.ends_with('/') {
+    if ends_with_separator(root) {
         return format!("{root}{suffix}");
     }
-    format!("{root}/{suffix}")
+    format!("{root}{SEPARATOR}{suffix}")
 }
 
 // watcher.go:1087
@@ -1683,17 +1683,19 @@ pub(crate) fn is_in_directory_or_self(dir: &str, path: &str) -> bool {
     if rest.is_empty() {
         return false;
     }
-    if dir.ends_with('/') {
+    if ends_with_separator(dir) {
         return true;
     }
-    rest.starts_with('/')
+    starts_with_separator(rest)
 }
 
 // tsrs-only (`find_consolidation_dir_locked`): the child of `dir` that `path`, a path strictly inside `dir`, is in
 // or is.
 fn child_on_path<'p>(dir: &str, path: &'p str) -> &'p str {
-    let start = if dir.ends_with('/') { dir.len() } else { dir.len() + 1 };
-    path[start..].find('/').map_or(path, |i| &path[..start + i])
+    let start = if ends_with_separator(dir) { dir.len() } else { dir.len() + 1 };
+    path[start..]
+        .find(|c: char| c.is_ascii() && is_path_separator(c as u8))
+        .map_or(path, |i| &path[..start + i])
 }
 
 // watcher.go:1108
@@ -1707,14 +1709,143 @@ pub(crate) fn is_direct_child(dir: &str, path: &str) -> bool {
     if rest.is_empty() {
         return false;
     }
-    if !rest.starts_with('/') {
+    if !rest.starts_with(['/', SEPARATOR]) {
         return false;
     }
     let rest = &rest[1..];
-    !rest.is_empty() && !rest.contains('/')
+    !rest.is_empty() && !rest.contains(['/', SEPARATOR])
+}
+
+// Go `filepath.Separator` and `os.IsPathSeparator`: Windows takes both slashes and writes backslashes.
+#[cfg(windows)]
+pub(crate) const SEPARATOR: char = '\\';
+#[cfg(not(windows))]
+pub(crate) const SEPARATOR: char = '/';
+
+pub(crate) fn is_path_separator(c: u8) -> bool {
+    c == b'/' || (cfg!(windows) && c == b'\\')
+}
+
+fn starts_with_separator(s: &str) -> bool {
+    s.as_bytes().first().is_some_and(|&c| is_path_separator(c))
+}
+
+fn ends_with_separator(s: &str) -> bool {
+    s.as_bytes().last().is_some_and(|&c| is_path_separator(c))
+}
+
+// Go `filepath.IsAbs`.
+#[cfg(not(windows))]
+pub(crate) fn filepath_is_abs(path: &str) -> bool {
+    path.starts_with('/')
+}
+
+// Go `filepath.IsAbs` (Windows): a volume (`C:`, `\\host\share`, `\\?\C:`) then a separator, or a UNC or device
+// path, whose volume makes it absolute.
+#[cfg(windows)]
+pub(crate) fn filepath_is_abs(path: &str) -> bool {
+    let l = volume_name_len(path);
+    if l == 0 {
+        return false;
+    }
+    if l > 2 {
+        return true;
+    }
+    starts_with_separator(&path[l..])
+}
+
+// Go `volumeNameLen` (Windows): the length of the leading volume name: `C:`, `\\host\share`, or a device path's
+// `\\.\X` / `\\?\X`.
+#[cfg(windows)]
+fn volume_name_len(path: &str) -> usize {
+    let b = path.as_bytes();
+    if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
+        return 2;
+    }
+    if b.len() < 3
+        || !is_path_separator(b[0])
+        || !is_path_separator(b[1])
+        || is_path_separator(b[2])
+    {
+        return 0;
+    }
+    // \\host\share: the host, then the share, each up to the next separator
+    let end_of = |from: usize| {
+        b[from..].iter().position(|&c| is_path_separator(c)).map_or(b.len(), |i| from + i)
+    };
+    let host_end = end_of(2);
+    if host_end == b.len() {
+        return b.len();
+    }
+    end_of(host_end + 1)
+}
+
+// Go `filepath.Clean` (Windows): the volume, then the cleaned rest with backslashes.
+#[cfg(windows)]
+pub(crate) fn filepath_clean(path: &str) -> String {
+    let vol_len = volume_name_len(path);
+    let (vol, rest) = path.split_at(vol_len);
+    let vol = vol.replace('/', "\\");
+    if rest.is_empty() {
+        // a UNC volume alone stays as it is; `C:` becomes `C:.`
+        return if vol_len > 2 { vol } else { format!("{vol}.") };
+    }
+    let rooted = starts_with_separator(rest);
+    let mut out: Vec<&str> = Vec::new();
+    for part in rest.split(|c: char| c.is_ascii() && is_path_separator(c as u8)) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if out.last().is_some_and(|p| *p != "..") {
+                    out.pop();
+                } else if !rooted {
+                    out.push("..");
+                }
+            }
+            p => out.push(p),
+        }
+    }
+    let joined = out.join("\\");
+    if rooted {
+        format!("{vol}\\{joined}")
+    } else if joined.is_empty() {
+        format!("{vol}.")
+    } else {
+        format!("{vol}{joined}")
+    }
+}
+
+// Go `filepath.Dir` (Windows).
+#[cfg(windows)]
+pub(crate) fn filepath_dir(path: &str) -> String {
+    let vol_len = volume_name_len(path);
+    let b = path.as_bytes();
+    let mut i = b.len();
+    while i > vol_len && !is_path_separator(b[i - 1]) {
+        i -= 1;
+    }
+    let dir = filepath_clean(&path[vol_len..i]);
+    if dir == "." && vol_len > 2 {
+        return path[..vol_len].to_string();
+    }
+    format!("{}{dir}", &path[..vol_len])
+}
+
+// Go `nativepath.Realpath` has no `\\?\` prefix on Windows; std's canonicalize has one.
+fn strip_verbatim(path: String) -> String {
+    if cfg!(windows) {
+        if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = path.strip_prefix(r"\\?\") {
+            return rest.to_string();
+        }
+    }
+    path
 }
 
 // Go `filepath.Clean` (Unix).
+#[cfg(not(windows))]
 pub(crate) fn filepath_clean(path: &str) -> String {
     if path.is_empty() {
         return ".".to_string();
@@ -1745,6 +1876,7 @@ pub(crate) fn filepath_clean(path: &str) -> String {
 }
 
 // Go `filepath.Dir` (Unix).
+#[cfg(not(windows))]
 pub(crate) fn filepath_dir(path: &str) -> String {
     let i = path.rfind('/').map_or(0, |i| i + 1);
     filepath_clean(&path[..i])

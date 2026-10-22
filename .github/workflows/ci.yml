@@ -113,6 +113,30 @@ jobs:
             target/test-results-default/*.txt
           if-no-files-found: ignore
 
+  watch-windows:
+    name: Watch mode Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+
+      - uses: oxc-project/setup-node@f46a72f95efdc55273fcd042d61c84e723b2892c # v1.4.1
+
+      - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
+        with:
+          save-cache: ${{ github.ref_name == 'main' }}
+          cache-key: warm-watch-windows
+
+      # The ReadDirectoryChangesW backend (crates/tsrs_fswatch/src/windows.rs)
+      - name: Watcher tests
+        run: cargo test --locked -p tsrs_fswatch --test windows_watch
+
+      - name: Build
+        run: cargo build --locked -p tsrs_cli
+
+      - name: Watch mode end to end
+        run: node tools/watch/smoke.mjs target/debug/tsrs.exe
+
   node-api-clients:
     name: Node API upstream clients
     runs-on: ubuntu-latest

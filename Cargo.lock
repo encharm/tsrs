@@ -1211,6 +1211,7 @@ dependencies = [
  "libc",
  "rustc-hash",
  "tsrs_core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

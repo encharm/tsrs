@@ -33,3 +33,6 @@ crates/tsrs_fswatch/src/fsevents_darwin_ffi.rs	Send	fsEventStream
 crates/tsrs_fswatch/src/fsevents_darwin_ffi.rs	Send	streamCallback
 crates/tsrs_fswatch/src/fsevents_darwin_ffi.rs	Sync	fsEventStream
 crates/tsrs_fswatch/src/fsevents_darwin_ffi.rs	Sync	streamCallback
+crates/tsrs_fswatch/src/windows.rs	Send	Handle
+crates/tsrs_fswatch/src/windows.rs	Send	windowsRead
+crates/tsrs_fswatch/src/windows.rs	Sync	Handle

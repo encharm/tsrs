@@ -1,7 +1,8 @@
 // Port of Go `internal/fswatch` (itself a Go port of @parcel/watcher): in-process filesystem watching with
-// FSEvents and kqueue (macOS / BSD) and inotify (Linux). Not ported: `fanotify_linux.go` (Linux uses inotify, the
-// same fallback Go takes on kernels without fanotify), `windows.go` (Windows builds get an unavailable watcher),
-// `walkDirGeneric` (only used where the unix walker does not exist).
+// FSEvents and kqueue (macOS / BSD), inotify (Linux) and ReadDirectoryChangesW (Windows). Not ported:
+// `fanotify_linux.go` (Linux uses inotify, the same fallback Go takes on kernels without fanotify), `walkdir_windows.go`
+// and `walkDirGeneric` (only the backends that walk a tree themselves call walkDir, and the Windows one watches
+// subtrees natively).
 
 mod canonicalize;
 mod debounce;
@@ -25,6 +26,8 @@ mod pathkey;
 #[cfg(unix)]
 mod walkdir_unix;
 mod watcher;
+#[cfg(windows)]
+mod windows;
 
 #[cfg(test)]
 mod eventlist_test;

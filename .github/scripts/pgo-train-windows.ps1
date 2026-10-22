@@ -10,7 +10,9 @@ New-Item -ItemType Directory -Force $RawDir | Out-Null
 $env:TSRS_LIB_PATH = Join-Path $env:GITHUB_WORKSPACE "crates/tsrs_vfs/libs"
 $env:TSRS_TEST_RESULTS = Join-Path $env:RUNNER_TEMP "pgo/test-results"
 
-$env:LLVM_PROFILE_FILE = Join-Path $RawDir "suite-%m.profraw"
+# One file per process (%p): the runner's workers are processes, and merging them into one shared file (%m) can
+# leave it truncated ("malformed instrumentation profile data") when they exit together.
+$env:LLVM_PROFILE_FILE = Join-Path $RawDir "suite-%p.profraw"
 & (Join-Path $BinDir "tsrs-test.exe") run --suite all --jobs 2 --timeout 120
 if ($LASTEXITCODE -ne 0) { throw "tsrs-test exited with $LASTEXITCODE" }
 

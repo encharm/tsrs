@@ -38,7 +38,8 @@ env:
 
 jobs:
   version:
-    if: github.repository == 'oxc-project/tsrs'
+    # encharm/tsrs: dry runs (workflow_dispatch) build the binaries for the @codecharm packages
+    if: github.repository == 'oxc-project/tsrs' || (github.repository == 'encharm/tsrs' && github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-22.04
     outputs:
       release: ${{ github.event_name == 'workflow_dispatch' || steps.check.outputs.changed == 'true' }}

@@ -33,3 +33,7 @@ foreach ($prefix in @("suite", "cli")) {
     $profiles = @(Get-ChildItem $RawDir -Filter "$prefix-*.profraw" | Where-Object Length -gt 0)
     if ($profiles.Count -eq 0) { throw "no nonempty $prefix profile" }
 }
+
+# Done. The step running this script exits with $LASTEXITCODE, which is still the CLI run's (it type-checks a
+# project with errors, so it is non-zero): the checks above passed, so report success.
+exit 0
